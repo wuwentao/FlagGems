@@ -12,12 +12,12 @@ from . import accuracy_utils as utils
 @pytest.mark.parametrize("dtype", utils.INT_DTYPES)
 def test_gcd_(shape, dtype):
     # GCD is only defined for integer types
-    inp1 = torch.randint(
-        low=1, high=100, size=shape, dtype=dtype, device="cpu"
-    ).to(flag_gems.device)
-    inp2 = torch.randint(
-        low=1, high=100, size=shape, dtype=dtype, device="cpu"
-    ).to(flag_gems.device)
+    inp1 = torch.randint(low=1, high=100, size=shape, dtype=dtype, device="cpu").to(
+        flag_gems.device
+    )
+    inp2 = torch.randint(low=1, high=100, size=shape, dtype=dtype, device="cpu").to(
+        flag_gems.device
+    )
     ref_inp1 = utils.to_reference(inp1.clone())
     ref_inp2 = utils.to_reference(inp2)
 
