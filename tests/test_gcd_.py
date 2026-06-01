@@ -6,7 +6,6 @@ import flag_gems
 from . import accuracy_utils as utils
 
 
-@pytest.mark.inplace
 @pytest.mark.gcd_
 @pytest.mark.parametrize("shape", utils.POINTWISE_SHAPES)
 @pytest.mark.parametrize("dtype", utils.INT_DTYPES)
