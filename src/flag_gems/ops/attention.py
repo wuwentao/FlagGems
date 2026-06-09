@@ -600,9 +600,13 @@ def _attn_bwd(
     # load scales
     offs_k = tl.arange(0, BLOCK_DMODEL)
 
-    # dK/dV: only execute when this pid covers a valid KV block
-    start_n = pid * BLOCK_N1
-    if start_n < KV_CTX:
+    # Grid dim 0 = NUM_KV_BLOCKS + NUM_Q_BLOCKS.
+    # pid in [0, NUM_KV_BLOCKS) handles dK/dV.
+    # pid in [NUM_KV_BLOCKS, grid_dim_0) handles dQ.
+    NUM_KV_BLOCKS = tl.cdiv(KV_CTX, BLOCK_N1)
+    if pid < NUM_KV_BLOCKS:
+        # ============ dK/dV section ============
+        start_n = pid * BLOCK_N1
         dv = tl.zeros([BLOCK_N1, BLOCK_DMODEL], dtype=tl.float32)
         dk = tl.zeros([BLOCK_N1, BLOCK_DMODEL], dtype=tl.float32)
 
@@ -696,9 +700,9 @@ def _attn_bwd(
         dk_ptrs = DK + offs_n[:, None] * dk_stride_tok + offs_k[None, :] * stride_d
         tl.store(dk_ptrs, dk, mask=offs_n_mask[:, None])
 
-    # dQ: only execute when this pid covers a valid Q block
-    start_m = pid * BLOCK_M2
-    if start_m < Q_CTX:
+    else:
+        # ============ dQ section ============
+        start_m = (pid - NUM_KV_BLOCKS) * BLOCK_M2
         offs_m = start_m + tl.arange(0, BLOCK_M2)
         offs_m_mask = offs_m < Q_CTX
         query = tl.load(
@@ -973,20 +977,14 @@ def scaled_dot_product_attention_backward(
         D_HEAD=BLOCK_DMODEL,  #
     )
 
+    # Grid dim 0 = NUM_KV_BLOCKS + NUM_Q_BLOCKS.
+    # pid in [0, NUM_KV_BLOCKS) computes dK/dV.
+    # pid in [NUM_KV_BLOCKS, grid_dim_0) computes dQ.
     grid = lambda meta: (
-        max(
-            triton.cdiv(
-                KV_CTX, meta["BLOCK_N1"]
-            ),  # _attn_bwd_dq traverse the key-value sequence
-            triton.cdiv(
-                Q_CTX, meta["BLOCK_M2"]
-            ),  # _attn_bwd_dkdv traverse the query sequence
-        ),
+        triton.cdiv(KV_CTX, meta["BLOCK_N1"]) + triton.cdiv(Q_CTX, meta["BLOCK_M2"]),
         1,
         BATCH * Q_HEAD,
     )
-    # logger.info(f"{triton.cdiv(Q_CTX, BLOCK_N1)=}")
-    # logger.info(f"{M.shape=}")
 
     _attn_bwd[grid](
         query,
@@ -1013,10 +1011,6 @@ def scaled_dot_product_attention_backward(
         KV_CTX,  #
         KV_HEAD,  #
         GROUP_HEAD=group_head,  #
-        # BLOCK_M1=BLOCK_M1,
-        # BLOCK_N1=BLOCK_N1,  #
-        # BLOCK_M2=BLOCK_M2,
-        # BLOCK_N2=BLOCK_N2,  #
         BLK_SLICE_FACTOR=BLK_SLICE_FACTOR,  #
         BLOCK_DMODEL=BLOCK_DMODEL,  #
         IS_CAUSAL=is_causal,  #
