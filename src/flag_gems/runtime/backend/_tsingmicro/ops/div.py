@@ -249,8 +249,9 @@ def _int_floordiv(x, y):
     c2 = (x < 0) ^ (y < 0)
     c3 = (x < 0) & (y == 0)
     c = c1 & c2
-    if x.dtype == tl.int16 and y.dtype == tl.int16:
-        return (x.to(tl.int32) // y.to(tl.int32)).cast(tl.int16) - c - c3
+    if x.dtype == tl.int16:
+        if y.dtype == tl.int16:
+            return (x.to(tl.int32) // y.to(tl.int32)).cast(tl.int16) - c - c3
     return x // y - c - c3
 
 
@@ -265,6 +266,8 @@ def _int_floordiv(x, y):
 @triton.jit
 def _float_floordiv(x, y):
     # NOTE: fmod's sign is the same as the dividend
+    if y.type.scalar.is_int():
+        y = y.to(tl.float32)
     remainder = fmod(x, y)
     imperfect = remainder != 0.0
     different_sign = (x < 0) ^ (y < 0)
