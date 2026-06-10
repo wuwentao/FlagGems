@@ -546,11 +546,54 @@ def _attn_bwd_dq(
 
 config_backward = runtime.get_tuned_config("attention_bwd")
 
+# Small head-dim configs for the backward kernel.
+# When BLOCK_DMODEL <= 32, the standard configs (BLOCK_N1=128, warps=4) can
+# exceed shared memory capacity on some hardware/Triton versions due to the
+# large shared memory footprint of tl.dot operands staged for pipelining.
+# These configs use BLOCK_N1=64 which halves the shared memory requirement
+# for the key/value tiles in the dK/dV section.
+SMALL_HEAD_DIM_BWD_CONFIGS = [
+    triton.Config(
+        {"BLOCK_M1": BM1, "BLOCK_N1": BN1, "BLOCK_M2": BM2, "BLOCK_N2": BN2},
+        num_stages=s,
+        num_warps=w,
+    )
+    for (BM1, BN1, BM2, BN2) in [
+        (32, 64, 64, 32),
+    ]
+    for s in [2, 3, 4]
+    for w in [4, 8]
+]
+config_backward = config_backward + SMALL_HEAD_DIM_BWD_CONFIGS
+
+
+def _prune_bwd_configs(configs, named_args, **kwargs):
+    """Filter backward configs based on BLOCK_DMODEL to avoid illegal memory access.
+
+    For small head dimensions (BLOCK_DMODEL <= 32):
+    - Configs with BLOCK_N1 > 64 cause shared/local memory overflow because the
+      tl.dot operands (BLOCK_N1 x BLOCK_DMODEL) staged by pipelining exceed the
+      available shared memory budget.
+    - Configs with BLOCK_M1 > 32 cause illegal memory access because the
+      intermediate dot product tile (BLOCK_N1 x BLOCK_M1) becomes too large,
+      leading to register spills or out-of-bounds accesses in Triton >= 3.6.0.
+    """
+    BLOCK_DMODEL = kwargs.get("BLOCK_DMODEL", named_args.get("BLOCK_DMODEL", 128))
+    if BLOCK_DMODEL <= 32:
+        pruned = [
+            c
+            for c in configs
+            if c.kwargs["BLOCK_N1"] <= 64 and c.kwargs["BLOCK_M1"] <= 32
+        ]
+        return pruned if pruned else configs
+    return configs
+
 
 @libentry()
 @libtuner(
     configs=config_backward,
     key=["KV_CTX", "BLOCK_DMODEL"],
+    prune_configs_by={"early_config_prune": _prune_bwd_configs},
 )
 @triton.jit
 def _attn_bwd(
