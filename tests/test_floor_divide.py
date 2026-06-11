@@ -8,6 +8,8 @@ import flag_gems
 
 from . import accuracy_utils as utils
 
+device = flag_gems.device
+
 
 def replace_zeros(inp):
     return torch.where(inp == 0, 1, inp)
