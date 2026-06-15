@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 import triton
 import triton.language as tl
+from packaging.version import Version as _Version
 
 from flag_gems import runtime
 from flag_gems.config import use_c_extension
@@ -579,7 +580,6 @@ def _prune_bwd_configs(configs, named_args, **kwargs):
 
 # Only register the prune callback for the affected Triton versions (>= 3.6.0, < 3.8.0).
 # Outside that range the bug does not exist, so all configs remain eligible.
-from packaging.version import Version as _Version
 
 _bwd_prune_configs = (
     {"early_config_prune": _prune_bwd_configs}
