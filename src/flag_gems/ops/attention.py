@@ -564,8 +564,7 @@ def _prune_bwd_configs(configs, named_args, **kwargs):
       intermediate dot product tile (BLOCK_N1 x BLOCK_M1) becomes too large,
       leading to register spills or out-of-bounds accesses.
 
-    NOTE: This function is intended solely to workaround an issue in Triton versions
-          3.6.0 and above, but prior to 3.8.0. See: triton/issues/10573.
+    NOTE: Only registered for Triton >= 3.6.0 and < 3.8.0. See: triton/issues/10573.
     """
     BLOCK_DMODEL = kwargs.get("BLOCK_DMODEL", named_args.get("BLOCK_DMODEL", 128))
     if BLOCK_DMODEL <= 32:
@@ -578,11 +577,22 @@ def _prune_bwd_configs(configs, named_args, **kwargs):
     return configs
 
 
+# Only register the prune callback for the affected Triton versions (>= 3.6.0, < 3.8.0).
+# Outside that range the bug does not exist, so all configs remain eligible.
+from packaging.version import Version as _Version
+
+_bwd_prune_configs = (
+    {"early_config_prune": _prune_bwd_configs}
+    if _Version("3.6.0") <= _Version(triton.__version__) < _Version("3.8.0")
+    else {}
+)
+
+
 @libentry()
 @libtuner(
     configs=config_backward,
     key=["KV_CTX", "BLOCK_DMODEL"],
-    prune_configs_by={"early_config_prune": _prune_bwd_configs},
+    prune_configs_by=_bwd_prune_configs,
 )
 @triton.jit
 def _attn_bwd(
