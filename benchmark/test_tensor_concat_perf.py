@@ -3,8 +3,8 @@ from typing import Generator
 import pytest
 import torch
 
-from benchmark.attri_util import FLOAT_DTYPES, INT_DTYPES, BenchLevel
-from benchmark.performance_utils import (
+from .attri_util import FLOAT_DTYPES, INT_DTYPES, BenchLevel
+from .performance_utils import (
     Benchmark,
     Config,
     GenericBenchmark,
@@ -171,25 +171,25 @@ def repeat_interleave_tensor_input_fn(shape, dtype, device):
             marks=pytest.mark.repeat,
         ),
         pytest.param(
-            "repeat_interleave.self_int",
+            "repeat_interleave_self_int",
             torch.repeat_interleave,
             repeat_interleave_self_int_input_fn,
             FLOAT_DTYPES,
-            marks=pytest.mark.repeat_interleave,
+            marks=pytest.mark.repeat_interleave_self_int,
         ),
         pytest.param(
-            "repeat_interleave.self_tensor",
+            "repeat_interleave_self_tensor",
             torch.repeat_interleave,
             repeat_interleave_self_tensor_input_fn,
             FLOAT_DTYPES,
-            marks=pytest.mark.repeat_interleave,
+            marks=pytest.mark.repeat_interleave_self_tensor,
         ),
         pytest.param(
-            "repeat_interleave.tensor",
+            "repeat_interleave_tensor",
             torch.repeat_interleave,
             repeat_interleave_tensor_input_fn,
             [torch.int32],
-            marks=pytest.mark.repeat_interleave,
+            marks=pytest.mark.repeat_interleave_tensor,
         ),
     ],
 )

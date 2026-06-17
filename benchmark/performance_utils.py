@@ -25,7 +25,7 @@ from .attri_util import (
     OperationAttribute,
     check_metric_dependencies,
 )
-from .conftest import Config, emit_record_logger
+from .conftest import Config, emit_record_logger, record_benchmark_result
 
 torch_backend_device = flag_gems.runtime.torch_backend_device
 torch_device_fn = flag_gems.runtime.torch_device_fn
@@ -138,6 +138,12 @@ class Benchmark:
             for metric in self.set_more_metrics():
                 if metric not in self.to_bench_metrics:
                     self.to_bench_metrics.append(metric)
+        if Config.no_torch:
+            self.to_bench_metrics = [
+                metric
+                for metric in self.to_bench_metrics
+                if metric not in {"latency_base", "speedup", "tflops"}
+            ]
 
     def set_more_metrics(self):
         """Base method (optional to override in subclasses). Returns additional shapes if applicable."""
@@ -418,9 +424,10 @@ class Benchmark:
                     if "speedup" in self.to_bench_metrics:
                         metric.speedup = metric.latency_base / metric.latency
                     if "gbps" in self.to_bench_metrics:
-                        metric.gbps_base = self.get_gbps(
-                            args, latency=metric.latency_base
-                        )
+                        if not Config.no_torch:
+                            metric.gbps_base = self.get_gbps(
+                                args, latency=metric.latency_base
+                            )
                         metric.gbps = self.get_gbps(args, latency=metric.latency)
                     if "tflops" in self.to_bench_metrics:
                         metric.tflops = (
@@ -444,6 +451,7 @@ class Benchmark:
                 result=metrics,
             )
             print(result)
+            record_benchmark_result(result)
             emit_record_logger(result.to_json())
 
 
