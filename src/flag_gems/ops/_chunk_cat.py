@@ -14,7 +14,6 @@ def _chunk_cat_kernel_1d(
     input_ptr,
     output_ptr,
     input_size,
-    num_chunks,
     chunk_size,
     total_output_elements,
     BLOCK_SIZE: tl.constexpr,
@@ -39,7 +38,6 @@ def _chunk_cat_kernel_2d_dim0(
     output_ptr,
     input_size_0,
     input_size_1,
-    num_chunks,
     chunk_size,
     total_output_elements,
     BLOCK_SIZE: tl.constexpr,
@@ -158,7 +156,6 @@ def _chunk_cat_triton_1d(
         tensor,
         output,
         input_size,
-        num_chunks,
         chunk_size,
         total_output,
         BLOCK_SIZE=BLOCK,
@@ -199,7 +196,6 @@ def _chunk_cat_triton_2d(
             output,
             input_size_0,
             input_size_1,
-            num_chunks,
             chunk_size,
             total_output,
             BLOCK_SIZE=BLOCK,
@@ -262,10 +258,18 @@ def _chunk_cat_triton_nd(
 
 def _chunk_cat_triton(tensor: torch.Tensor, dim: int, num_chunks: int) -> torch.Tensor:
     """Main Triton implementation for single tensor."""
-    if tensor.numel() == 0:
-        return tensor
-
     dim = dim % tensor.ndim
+
+    if tensor.numel() == 0:
+        # Return empty tensor with correct output shape
+        dim_size = tensor.shape[dim]
+        chunk_size = (dim_size + num_chunks - 1) // num_chunks if dim_size > 0 else 0
+        output_shape = (
+            list(tensor.shape[:dim])
+            + [num_chunks, chunk_size]
+            + list(tensor.shape[dim + 1 :])
+        )
+        return torch.empty(output_shape, dtype=tensor.dtype, device=tensor.device)
 
     if tensor.ndim == 1:
         return _chunk_cat_triton_1d(tensor, dim, num_chunks)
@@ -282,14 +286,27 @@ def _chunk_cat_impl(
     if len(tensors) == 0:
         raise ValueError("_chunk_cat(): expected a non-empty list of Tensors")
 
+    if num_chunks <= 0:
+        raise ValueError(f"_chunk_cat(): num_chunks must be positive, got {num_chunks}")
+
+    ndim = tensors[0].ndim
+    if ndim == 0:
+        raise ValueError("_chunk_cat(): expected tensors with at least 1 dimension")
+    if dim < -ndim or dim >= ndim:
+        raise IndexError(
+            f"_chunk_cat(): dim {dim} out of range for tensor with {ndim} dimensions"
+        )
+
     if len(tensors) == 1:
         return _chunk_cat_triton(tensors[0], dim, num_chunks)
 
     # Multiple tensors case
-    dim = dim % tensors[0].ndim
+    # NOTE: The multi-tensor path uses PyTorch ops (chunk, cat, stack) rather than a
+    # custom Triton kernel. A fused Triton kernel for multi-tensor _chunk_cat is left
+    # as a future optimization.
+    dim = dim % ndim
     dim_size = tensors[0].shape[dim]
     chunk_size = (dim_size + num_chunks - 1) // num_chunks
-    ndim = tensors[0].ndim
     device = tensors[0].device
     dtype = tensors[0].dtype
     num_tensors = len(tensors)
