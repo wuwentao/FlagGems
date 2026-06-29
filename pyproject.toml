@@ -78,9 +78,9 @@ enflame = [
     "torchaudio==2.10.0+cpu",
     "torchvision==0.25.0+cpu",
     "torch-gcu==2.10.0+3.7.20260408",
-    "triton-gcu==3.6.0+1.0.20260521.cc.1.9.10",
     "flash-attn==2.7.2+torch.2.9.1.gcu.3.4.20260323",
     "flagtree==0.6.0+enflame3.6",
+    # "triton-gcu==3.6.0+1.0.20260521.cc.1.9.10",
 ]
 
 hygon = [
@@ -131,7 +131,7 @@ mthreads = [
     "torch_musa==2.9.0",
     "triton==3.6.0+git89458660",
     "mkl==2024.0.0",
-    # "flagtree==0.5.1+mthreads3.6",
+    "flagtree==0.6.0+mthreads3.6",
 ]
 
 nvidia-cuda128 = [
@@ -158,15 +158,14 @@ sunrise = [
     "torchaudio==2.11.0+cpu",
     "torchvision==0.26.0+cpu",
     "torch-ptpu==0.2.1+gaf2c267.torch2.11",
-    "triton==3.4.0.6+gite4f6d6e4",
-    # "flagtree-0.4.0+sunrise3.4"
+    "flagtree-0.4.0+sunrise3.4"
+    # "triton==3.4.0.6+gite4f6d6e4",
 ]
 
 thead = [
     "torch==2.9.0+ppu2.0.0.oe",
     "triton==3.5.0+ppu2.0.0.oe",
 ]
-
 
 tsingmicro = [
     "torch==2.7.0+cpu",
