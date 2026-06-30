@@ -30,22 +30,16 @@ def reflection_pad1d_backward_kernel(
     base_out = pid_b * W_out
     base_in = pid_b * W_in
 
-    # Load gradient from output and cast to float32 for accumulation
     grad = tl.load(grad_output_ptr + base_out + offs_w, mask=mask_out, other=0.0)
-    grad_f32 = grad.to(tl.float32)
 
-    # Compute reflected index for each output position
-    x = offs_w.to(tl.int32) - pad_left
+    x_off = offs_w.to(tl.int32) - pad_left
     Wm1 = W_in - 1
-    p = 2 * Wm1
+    twin = 2 * max(Wm1, 1)
+    x_abs = tl.abs(x_off)
+    m = x_abs % twin
+    iw = tl.where(m < W_in, m, twin - m)
 
-    t = tl.abs(x)
-    m = t % p
-    iw = tl.where(m < W_in, m, p - m)
-
-    # Atomically accumulate gradient to input positions (float32 for atomic safety)
-    grad_input_offset = base_in + iw
-    tl.atomic_add(grad_input_ptr + grad_input_offset, grad_f32, mask=mask_out)
+    tl.atomic_add(grad_input_ptr + base_in + iw, grad, mask=mask_out)
 
 
 def _launch_reflection_pad1d_backward(
@@ -74,26 +68,9 @@ def _launch_reflection_pad1d_backward(
     leading_shape = x.shape[:-1]
     B = int(math.prod(leading_shape)) if len(leading_shape) > 0 else 1
 
-    # Initialize grad_input as float32 for safe accumulation
-    grad_input = torch.zeros_like(x, dtype=torch.float32)
-
-    # No padding case - just copy
     if pad_left == 0 and pad_right == 0:
-        if W_out != W_in:
-            raise RuntimeError(
-                "Internal error: W_out should equal W_in when no padding"
-            )
-        grid = (B, triton.cdiv(W_in, 256))
-        with torch_device_fn.device(x.device):
-            _copy_rows_kernel_f32[grid](grad_output, grad_input, B, W_in, BLOCK_W=256)
-        if grad_input.dtype == x.dtype:
-            return grad_input
-        result = torch.empty_like(x)
-        with torch_device_fn.device(x.device):
-            _copy_rows_kernel[grid](grad_input, result, B, W_in, BLOCK_W=256)
-        return result
+        return grad_output[:, :].contiguous().clone()
 
-    # Validate input dimensions
     if W_in < 2:
         raise ValueError(
             "input width must be at least 2 for reflection padding when padding > 0"
@@ -103,44 +80,15 @@ def _launch_reflection_pad1d_backward(
             "padding values must be less than the input width for reflection padding"
         )
 
-    grid = (B, triton.cdiv(W_out, 256))
+    grad_input = torch.zeros_like(x)
+
+    BLOCK_W = triton.next_power_of_2(W_out)
+    grid = (B, triton.cdiv(W_out, BLOCK_W))
     with torch_device_fn.device(x.device):
         reflection_pad1d_backward_kernel[grid](
-            grad_output, grad_input, B, W_in, pad_left, W_out, BLOCK_W=256
+            grad_output, grad_input, B, W_in, pad_left, W_out, BLOCK_W=BLOCK_W
         )
-    if grad_input.dtype == x.dtype:
-        return grad_input
-    result = torch.empty_like(x)
-    cast_grid = (B, triton.cdiv(W_in, 256))
-    with torch_device_fn.device(x.device):
-        _copy_rows_kernel[cast_grid](grad_input, result, B, W_in, BLOCK_W=256)
-    return result
-
-
-@triton.jit
-def _copy_rows_kernel_f32(in_ptr, out_ptr, B, W, BLOCK_W: tl.constexpr):
-    pid_b = tl.program_id(axis=0)
-    pid_w = tl.program_id(axis=1)
-
-    offs_w = pid_w * BLOCK_W + tl.arange(0, BLOCK_W)
-    mask = (offs_w < W) & (pid_b < B)
-
-    base = pid_b * W
-    vals = tl.load(in_ptr + base + offs_w, mask=mask, other=0.0).to(tl.float32)
-    tl.store(out_ptr + base + offs_w, vals, mask=mask)
-
-
-@triton.jit
-def _copy_rows_kernel(in_ptr, out_ptr, B, W, BLOCK_W: tl.constexpr):
-    pid_b = tl.program_id(axis=0)
-    pid_w = tl.program_id(axis=1)
-
-    offs_w = pid_w * BLOCK_W + tl.arange(0, BLOCK_W)
-    mask = (offs_w < W) & (pid_b < B)
-
-    base = pid_b * W
-    vals = tl.load(in_ptr + base + offs_w, mask=mask, other=0)
-    tl.store(out_ptr + base + offs_w, vals, mask=mask)
+    return grad_input
 
 
 def reflection_pad1d_backward(grad_output: torch.Tensor, input: torch.Tensor, padding):
