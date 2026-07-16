@@ -349,8 +349,10 @@ def get_env(gpu_ids):
 
     env_vars = vendor_env_map.get(vendor, None)
     # new vendor not in the map, fallback to CUDA_VISIBLE_DEVICES with a warning
-    if not env_vars:
-        pwarn(f"Unknown vendor '{vendor}', using CUDA_VISIBLE_DEVICES by default")
+    if env_vars is None:
+        pwarn(
+            f"No vendor-specific device masking for '{vendor}', falling back to  CUDA_VISIBLE_DEVICES"
+        )
         env_vars = ["CUDA_VISIBLE_DEVICES"]
     for var in env_vars:
         env[var] = gpu_ids
